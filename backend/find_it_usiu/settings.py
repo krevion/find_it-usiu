@@ -32,16 +32,23 @@ if not SECRET_KEY:
         raise ImproperlyConfigured('DJANGO_SECRET_KEY must be configured.')
     SECRET_KEY = 'local-only-development-key-do-not-use-in-production'
 
-ALLOWED_HOSTS = [
+render_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS.extend(
     host.strip()
-    for host in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    for host in os.environ.get('ALLOWED_HOSTS', '').split(',')
     if host.strip()
-]
+)
+if render_hostname:
+    ALLOWED_HOSTS.append(render_hostname)
+
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
     if origin.strip()
 ]
+if render_hostname:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{render_hostname}')
 
 
 # Application definition

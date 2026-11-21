@@ -27,7 +27,8 @@ The root `render.yaml` defines the web service. In Render, create a Blueprint
 from this GitHub repository and provide `DB_PASSWORD` using the Supabase
 PostgreSQL session-pooler password. Render generates `DJANGO_SECRET_KEY`
 automatically. The build installs dependencies, collects static files, and
-applies migrations; the start command runs Gunicorn.
+applies migrations; the start command runs Gunicorn. Django trusts Render's
+runtime hostname for hosts and CSRF requests automatically.
 
 Uploaded item photos currently use Django's local media directory. Render's
 free web service filesystem is ephemeral, so configure persistent media storage

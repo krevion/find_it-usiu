@@ -12,10 +12,6 @@ services:
         generateValue: true
       - key: DEBUG
         value: "false"
-      - key: ALLOWED_HOSTS
-        value: find-it-usiu.onrender.com
-      - key: CSRF_TRUSTED_ORIGINS
-        value: https://find-it-usiu.onrender.com
       - key: DB_NAME
         value: postgres
       - key: DB_USER
