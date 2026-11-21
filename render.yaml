@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: find-it-usiu
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: cd backend && bash build.sh
+    startCommand: cd backend && gunicorn find_it_usiu.wsgi:application --bind 0.0.0.0:$PORT
+    healthCheckPath: /
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "false"
+      - key: ALLOWED_HOSTS
+        value: find-it-usiu.onrender.com
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://find-it-usiu.onrender.com
+      - key: DB_NAME
+        value: postgres
+      - key: DB_USER
+        value: postgres.ifzinyigspogaganqobl
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_HOST
+        value: aws-1-eu-west-1.pooler.supabase.com
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_SSLMODE
+        value: require

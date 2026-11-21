@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Find It | USIU-Africa Lost & Found</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/find/style.css">
 </head>
 <body>
 
@@ -231,9 +231,9 @@
 
         <div id="securityLocked" class="panel locked-panel">
             <h2>Security access required</h2>
-            <p>Switch to the Security demo role.</p>
+            <p>Sign in with an authorized Security account.</p>
             <button class="btn btn-primary" id="securityLogin">
-                Enter security demo
+                Security team sign in
             </button>
         </div>
 
@@ -391,7 +391,7 @@
         <button class="close-button">×</button>
     </form>
 
-    <h2>Student portal</h2>
+    <h2>Sign in</h2>
 
     <form id="studentLoginForm" class="form-panel">
 
@@ -411,11 +411,23 @@
 
     </form>
 
-    <p>DEMO ACCESS</p>
+    <h3>Security team</h3>
 
-    <button class="btn btn-outline full-width" id="securityRoleButton">
-        Continue as Security (demo)
-    </button>
+    <form id="securityLoginForm" class="form-panel">
+        <label>
+            Username
+            <input name="username" required autocomplete="username">
+        </label>
+
+        <label>
+            Password
+            <input name="password" type="password" required autocomplete="current-password">
+        </label>
+
+        <button class="btn btn-outline full-width" type="submit">
+            Sign in as Security
+        </button>
+    </form>
 
     <button class="text-button full-width" id="logoutButton">
         Sign out
@@ -435,7 +447,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="/static/script.js"></script>
+<script src="/static/find/script.js"></script>
 
 </body>
 </html>

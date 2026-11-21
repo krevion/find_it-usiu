@@ -2,20 +2,30 @@ from datetime import date
 from io import BytesIO
 from tempfile import TemporaryDirectory
 
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from PIL import Image
 
-from .models import FoundItem
+from .models import Claim, FoundItem
 
 
+@override_settings(
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"]
+)
 class FoundItemApiTests(TestCase):
     def setUp(self):
         self.media_directory = TemporaryDirectory()
         self.settings_override = override_settings(MEDIA_ROOT=self.media_directory.name)
         self.settings_override.enable()
         cache.clear()
+        self.security_user = get_user_model().objects.create_user(
+            username="security",
+            email="security@example.com",
+            password="test-security-password",
+            is_staff=True,
+        )
 
     def tearDown(self):
         cache.clear()
@@ -43,7 +53,20 @@ class FoundItemApiTests(TestCase):
         data.update(overrides)
         return data
 
+    def create_found_item(self):
+        self.client.force_login(self.security_user)
+        response = self.client.post("/found/", self.found_item_data())
+        self.assertEqual(response.status_code, 201)
+        return response.json()["id"]
+
+    def test_found_item_submission_requires_security_access(self):
+        response = self.client.post("/found/", self.found_item_data())
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(FoundItem.objects.exists())
+
     def test_submit_found_item_stores_photo_and_hashes_answer(self):
+        self.client.force_login(self.security_user)
         response = self.client.post("/found/", self.found_item_data())
 
         self.assertEqual(response.status_code, 201)
@@ -51,8 +74,10 @@ class FoundItemApiTests(TestCase):
         self.assertTrue(item.photo.name.startswith("found_items/"))
         self.assertNotEqual(item.security_answer_hash, "usiu")
         self.assertTrue(item.verify_security_answer(" usiu "))
+        self.assertEqual(item.uploaded_by, self.security_user)
 
     def test_submit_rejects_non_image_upload(self):
+        self.client.force_login(self.security_user)
         response = self.client.post(
             "/found/",
             self.found_item_data(
@@ -85,25 +110,93 @@ class FoundItemApiTests(TestCase):
         self.assertNotIn("finder_contact", result)
         self.assertNotIn("security_answer_hash", result)
 
-    def test_security_answer_verification_and_rate_limit(self):
-        response = self.client.post("/found/", self.found_item_data())
-        item_id = response.json()["id"]
+    def test_claim_answer_verification_and_rate_limit(self):
+        item_id = self.create_found_item()
+        claim_data = {
+            "claimant_name": "Student",
+            "claimant_email": "student@example.com",
+            "answer": "wrong",
+        }
 
-        wrong_response = None
         for _ in range(5):
             wrong_response = self.client.post(
-                f"/found/{item_id}/verify/", {"answer": "wrong"}
+                f"/found/{item_id}/claim/", claim_data
             )
             self.assertEqual(wrong_response.status_code, 400)
 
-        limited_response = self.client.post(
-            f"/found/{item_id}/verify/", {"answer": "USIU"}
-        )
+        claim_data["answer"] = "USIU"
+        limited_response = self.client.post(f"/found/{item_id}/claim/", claim_data)
         self.assertEqual(limited_response.status_code, 429)
+        self.assertFalse(Claim.objects.exists())
 
         cache.clear()
-        verified_response = self.client.post(
-            f"/found/{item_id}/verify/", {"answer": "USIU"}
+        claim_data["answer"] = " usiu "
+        claim_response = self.client.post(
+            f"/found/{item_id}/claim/", claim_data
         )
-        self.assertEqual(verified_response.status_code, 200)
-        self.assertTrue(verified_response.json()["verified"])
+        self.assertEqual(claim_response.status_code, 201)
+        claim = Claim.objects.get(pk=claim_response.json()["id"])
+        self.assertTrue(claim.answer_verified)
+        self.assertEqual(claim.status, Claim.Status.PENDING)
+        self.assertFalse(hasattr(claim, "answer"))
+
+    def test_security_login_and_claim_review_require_staff(self):
+        response = self.client.post(
+            "/security/login/",
+            {"username": "security", "password": "test-security-password"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["authenticated"])
+
+        item_id = self.create_found_item()
+        claim_response = self.client.post(
+            f"/found/{item_id}/claim/",
+            {
+                "claimant_name": "Student",
+                "claimant_email": "student@example.com",
+                "answer": "USIU",
+            },
+        )
+        self.assertEqual(claim_response.status_code, 201)
+        claim_id = claim_response.json()["id"]
+
+        claims_response = self.client.get("/security/claims/")
+        self.assertEqual(claims_response.status_code, 200)
+        self.assertEqual(claims_response.json()["results"][0]["id"], claim_id)
+
+        decision_response = self.client.post(
+            f"/security/claims/{claim_id}/decision/",
+            {"status": Claim.Status.APPROVED},
+        )
+        self.assertEqual(decision_response.status_code, 200)
+        claim = Claim.objects.get(pk=claim_id)
+        self.assertEqual(claim.reviewed_by, self.security_user)
+        self.assertIsNotNone(claim.reviewed_at)
+        item = FoundItem.objects.get(pk=item_id)
+        self.assertEqual(item.status, FoundItem.Status.RETURNED)
+
+        duplicate_claim = self.client.post(
+            f"/found/{item_id}/claim/",
+            {
+                "claimant_name": "Another Student",
+                "claimant_email": "another@example.com",
+                "answer": "USIU",
+            },
+        )
+        self.assertEqual(duplicate_claim.status_code, 409)
+
+    def test_non_staff_cannot_sign_in_as_security(self):
+        get_user_model().objects.create_user(
+            username="student",
+            password="test-student-password",
+            is_staff=False,
+        )
+        response = self.client.post(
+            "/security/login/",
+            {"username": "student", "password": "test-student-password"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_security_claim_list_requires_authenticated_staff(self):
+        response = self.client.get("/security/claims/")
+        self.assertEqual(response.status_code, 401)

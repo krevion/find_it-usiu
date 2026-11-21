@@ -1,63 +1,11 @@
 
 /* =====================================
    FIND IT - USIU AFRICA LOST AND FOUND
-   FRONTEND DEMONSTRATION
+   CAMPUS LOST AND FOUND
 ===================================== */
 
 const STORE_KEY = "findItUSIU_v1";
 const API_ROOT = "";
-
-const seedItems = [
-    {
-        id: "demo1",
-        name: "Black leather wallet",
-        category: "Bags & wallets",
-        location: "Student Centre",
-        date: "2026-11-08",
-        description: "Black leather wallet.",
-        photo: "",
-        status: "Found",
-        questions: [
-            "What brand is printed inside the wallet?",
-            "What card is kept inside it?"
-        ],
-        answers: ["samplebrand", "librarycard"],
-        claims: []
-    },
-    {
-        id: "demo2",
-        name: "Silver water bottle",
-        category: "Other",
-        location: "Library, Level 2",
-        date: "2026-11-07",
-        description: "Silver reusable water bottle.",
-        photo: "",
-        status: "Found",
-        questions: [
-            "What sticker is on the bottle?",
-            "What colour is the bottle cap?"
-        ],
-        answers: ["mountain", "blue"],
-        claims: []
-    },
-    {
-        id: "demo3",
-        name: "Wireless earbuds",
-        category: "Electronics",
-        location: "Block B, Room 204",
-        date: "2026-11-06",
-        description: "Wireless earbuds in a charging case.",
-        photo: "",
-        status: "Found",
-        questions: [
-            "What is the brand?",
-            "Describe a unique mark on the case."
-        ],
-        answers: ["soundcore", "small scratch"],
-        claims: []
-    }
-];
-
 
 // =====================================
 // APPLICATION DATA
@@ -67,17 +15,16 @@ function loadState() {
     try {
         const saved = JSON.parse(localStorage.getItem(STORE_KEY));
 
-        return saved && Array.isArray(saved.items)
-            ? saved
-            : {
-                items: seedItems,
-                claims: [],
-                lostReports: []
-            };
-
+        return {
+            items: [],
+            claims: [],
+            lostReports: saved && Array.isArray(saved.lostReports)
+                ? saved.lostReports
+                : []
+        };
     } catch {
         return {
-            items: seedItems,
+            items: [],
             claims: [],
             lostReports: []
         };
@@ -97,7 +44,10 @@ let toastTimer;
 
 // Save application data
 function saveState() {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.setItem(
+        STORE_KEY,
+        JSON.stringify({ lostReports: state.lostReports })
+    );
 }
 
 
@@ -108,6 +58,32 @@ function getCookie(name) {
         .find(value => value.startsWith(name + "="));
 
     return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : "";
+}
+
+
+async function refreshSecuritySession() {
+    const response = await fetch("/security/session/", {
+        headers: { Accept: "application/json" }
+    });
+    if (!response.ok) {
+        throw new Error("Could not verify the security session.");
+    }
+
+    const session = await response.json();
+    if (session.authenticated) {
+        currentUser = {
+            name: session.name,
+            email: session.email,
+            role: "security"
+        };
+        sessionStorage.setItem("findItUser", JSON.stringify(currentUser));
+    } else if (currentUser && currentUser.role === "security") {
+        currentUser = null;
+        sessionStorage.removeItem("findItUser");
+    }
+
+    updateUser();
+    renderSecurity();
 }
 
 
@@ -139,7 +115,7 @@ async function syncFoundItems() {
         date: item.date_found,
         description: item.description,
         photo: item.photo,
-        status: "Found",
+        status: item.status === "returned" ? "Returned" : "Found",
         questions: [item.security_question],
         answers: [],
         claims: []
@@ -204,7 +180,14 @@ function go(page) {
 
     if (page === "browse") renderBrowse();
     if (page === "home") renderHome();
-    if (page === "security") renderSecurity();
+    if (page === "security") {
+        renderSecurity();
+        if (currentUser && currentUser.role === "security") {
+            syncSecurityClaims().catch(() => {
+                showToast("Could not load security claims.");
+            });
+        }
+    }
 
     window.scrollTo({
         top: 0,
@@ -286,34 +269,46 @@ document.getElementById("studentLoginForm").addEventListener(
 
         document.getElementById("accountDialog").close();
 
-        showToast("Student demo login successful.");
+        showToast("Student session started.");
     }
 );
 
 
-// Security demo login
-document.getElementById("securityRoleButton").addEventListener(
-    "click",
-    () => {
+document.getElementById("securityLoginForm").addEventListener(
+    "submit",
+    async event => {
+        event.preventDefault();
+
+        const formData = new FormData(event.target);
+        let response;
+        try {
+            response = await fetch("/security/login/", {
+                method: "POST",
+                headers: { "X-CSRFToken": getCookie("csrftoken") },
+                body: formData
+            });
+        } catch {
+            showToast("Could not connect to the security sign-in service.");
+            return;
+        }
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            showToast(result.error || "Security sign-in failed.");
+            return;
+        }
 
         currentUser = {
-            name: "Security Desk",
-            email: "security-demo@usiu.ac.ke",
+            name: result.name,
+            email: result.email,
             role: "security"
         };
-
-        sessionStorage.setItem(
-            "findItUser",
-            JSON.stringify(currentUser)
-        );
-
+        sessionStorage.setItem("findItUser", JSON.stringify(currentUser));
+        event.target.reset();
         updateUser();
-
         document.getElementById("accountDialog").close();
-
         go("security");
-
-        showToast("Security demo access enabled.");
+        showToast("Security signed in.");
     }
 );
 
@@ -329,16 +324,25 @@ document.getElementById("securityLogin").addEventListener(
 // Logout
 document.getElementById("logoutButton").addEventListener(
     "click",
-    () => {
-
+    async () => {
+        let response;
+        try {
+            response = await fetch("/security/logout/", {
+                method: "POST",
+                headers: { "X-CSRFToken": getCookie("csrftoken") }
+            });
+        } catch {
+            showToast("Could not connect to the sign-out service.");
+            return;
+        }
+        if (!response.ok) {
+            showToast("Could not sign out.");
+            return;
+        }
         currentUser = null;
-
         sessionStorage.removeItem("findItUser");
-
         updateUser();
-
         document.getElementById("accountDialog").close();
-
         showToast("You have signed out.");
     }
 );
@@ -508,6 +512,11 @@ function openClaim(id) {
 
     if (!item) return;
 
+    if (item.status === "Returned") {
+        showToast("This item has already been returned.");
+        return;
+    }
+
     if (!currentUser || currentUser.role !== "student") {
 
         showToast("Please sign in as a student first.");
@@ -602,12 +611,14 @@ function openClaim(id) {
 
             const verificationData = new FormData();
             verificationData.append("answer", answers[0]);
+            verificationData.append("claimant_name", currentUser.name);
+            verificationData.append("claimant_email", currentUser.email);
 
             let verification;
 
             try {
                 verification = await fetch(
-                    `${API_ROOT}/found/${encodeURIComponent(item.id)}/verify/`,
+                    `${API_ROOT}/found/${encodeURIComponent(item.id)}/claim/`,
                     {
                         method: "POST",
                         headers: { "X-CSRFToken": getCookie("csrftoken") },
@@ -627,7 +638,8 @@ function openClaim(id) {
 
             document.getElementById("claimDialog").close();
 
-            showToast("Answer verified. Please collect the item from Security.");
+            const result = await verification.json();
+            showToast(result.message || "Claim submitted to Security for review.");
         }
     );
 }
@@ -810,7 +822,7 @@ function renderSecurity() {
 
     document.getElementById("statClaims").textContent =
         state.claims.filter(
-            claim => claim.status === "Pending"
+            claim => claim.status === "pending"
         ).length;
 
     document.getElementById("statReturned").textContent =
@@ -823,33 +835,33 @@ function renderSecurity() {
     const list = document.getElementById("claimsList");
 
     list.innerHTML = state.claims.length
-
-        ? state.claims.slice().reverse().map(claim => `
+        ? state.claims.map(claim => `
 
             <div class="claim-row">
 
-                <strong>${escapeHTML(claim.itemName)}</strong>
+                <strong>${escapeHTML(claim.item_name)}</strong>
 
                 <small>
-                    ${escapeHTML(claim.student)}
+                    ${escapeHTML(claim.claimant_name)}
                     •
-                    ${escapeHTML(claim.email)}
+                    ${escapeHTML(claim.claimant_email)}
                     <br>
-                    ${new Date(claim.submitted).toLocaleString()}
+                    ${new Date(claim.submitted_at).toLocaleString()}
                     •
                     ${escapeHTML(claim.status)}
+                    ${claim.answer_verified ? "• Ownership answer verified" : ""}
                 </small>
 
                 ${
-                    claim.status === "Pending"
+                    claim.status === "pending"
                     ? `
                         <div class="claim-actions">
 
                             <button
                                 class="btn btn-primary"
-                                data-review="${claim.id}"
+                                data-approve="${claim.id}"
                             >
-                                Review answers
+                                Approve & mark returned
                             </button>
 
                             <button
@@ -872,95 +884,71 @@ function renderSecurity() {
 }
 
 
+async function syncSecurityClaims() {
+    const response = await fetch("/security/claims/", {
+        headers: { Accept: "application/json" }
+    });
+    if (!response.ok) {
+        throw new Error("Could not load security claims.");
+    }
+
+    const payload = await response.json();
+    state.claims = payload.results;
+    renderSecurity();
+}
+
+
 // =====================================
-// REVIEW AND DECLINE CLAIMS
+// APPROVE AND DECLINE CLAIMS
 // =====================================
 
 document.getElementById("claimsList").addEventListener(
     "click",
-    event => {
-
-        const review = event.target.closest("[data-review]");
-
+    async event => {
+        const approve = event.target.closest("[data-approve]");
         const reject = event.target.closest("[data-reject]");
-
-
-        // Decline claim
-        if (reject) {
-
-            const claim = state.claims.find(
-                item => item.id === reject.dataset.reject
-            );
-
-            if (claim) {
-
-                claim.status = "Declined";
-
-                saveState();
-
-                renderSecurity();
-
-                showToast("Claim declined.");
-            }
-
+        if (!approve && !reject) {
             return;
         }
 
+        const claimId = (approve || reject).dataset.approve
+            || (approve || reject).dataset.reject;
+        const status = approve ? "approved" : "declined";
+        const confirmation = approve
+            ? "Confirm you verified the claimant's identity in person and are returning this item."
+            : "Decline this ownership claim?";
+        if (!window.confirm(confirmation)) return;
 
-        // Review claim
-        if (review) {
+        const data = new FormData();
+        data.append("status", status);
 
-            const claim = state.claims.find(
-                item => item.id === review.dataset.review
+        let response;
+        try {
+            response = await fetch(
+                `/security/claims/${encodeURIComponent(claimId)}/decision/`,
+                {
+                    method: "POST",
+                    headers: { "X-CSRFToken": getCookie("csrftoken") },
+                    body: data
+                }
             );
+        } catch {
+            showToast("Could not connect to the claim review service.");
+            return;
+        }
 
-            if (!claim) return;
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            showToast(result.error || "Could not update this claim.");
+            return;
+        }
 
-            const item = state.items.find(
-                item => item.id === claim.itemId
-            );
-
-            if (!item) return;
-
-
-            const details = item.questions.map((question, index) => {
-
-                return `
-                    Question ${index + 1}: ${question}
-
-                    Expected answer: ${item.answers[index]}
-
-                    Claimant answer: ${claim.answers[index]}
-                `;
-
-            }).join("\n\n");
-
-
-            const confirmed = window.confirm(
-
-                `Review claim for ${claim.itemName}
-
-                Student: ${claim.student}
-
-                ${details}
-
-                OK = Approve for in-person verification.
-                Cancel = Keep pending.`
-            );
-
-
-            if (confirmed) {
-
-                claim.status = "Approved - verify in person";
-
-                saveState();
-
-                renderSecurity();
-
-                showToast(
-                    "Approved for in-person verification."
-                );
-            }
+        try {
+            await syncFoundItems();
+            await syncSecurityClaims();
+            showToast(status === "approved" ? "Item marked as returned." : "Claim declined.");
+        } catch {
+            showToast("Claim updated, but the dashboard could not be refreshed.");
         }
     }
 );
@@ -979,5 +967,9 @@ renderBrowse();
 renderSecurity();
 
 syncFoundItems().catch(() => {
-    showToast("Backend unavailable. Showing saved demo items.");
+    showToast("Could not load found items from the database.");
+});
+
+refreshSecuritySession().catch(() => {
+    showToast("Could not verify the security session.");
 });
