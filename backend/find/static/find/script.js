@@ -313,14 +313,6 @@ document.getElementById("securityLoginForm").addEventListener(
 );
 
 
-document.getElementById("securityLogin").addEventListener(
-    "click",
-    () => {
-        document.getElementById("accountDialog").showModal();
-    }
-);
-
-
 // Logout
 document.getElementById("logoutButton").addEventListener(
     "click",

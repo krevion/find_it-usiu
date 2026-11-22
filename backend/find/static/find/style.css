@@ -518,6 +518,12 @@ nav {
     padding: 35px;
 }
 
+.security-signin-form {
+    max-width: 380px;
+    margin: 20px auto 0;
+    text-align: left;
+}
+
 .photo-preview {
     height: 125px;
     border: 1px dashed #cbd5e1;

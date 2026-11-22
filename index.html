@@ -230,11 +230,23 @@
         </div>
 
         <div id="securityLocked" class="panel locked-panel">
-            <h2>Security access required</h2>
-            <p>Sign in with an authorized Security account.</p>
-            <button class="btn btn-primary" id="securityLogin">
-                Security team sign in
-            </button>
+            <h2>Demo Security sign in</h2>
+            <p>Sign in with the demo account to try the Security dashboard, including found-item uploads and claim reviews.</p>
+            <form id="securityLoginForm" class="form-panel security-signin-form">
+                <label>
+                    Username
+                    <input name="username" value="demo" required autocomplete="username">
+                </label>
+
+                <label>
+                    Password
+                    <input name="password" type="password" required autocomplete="current-password">
+                </label>
+
+                <button class="btn btn-primary full-width" type="submit">
+                    Sign in to Security dashboard
+                </button>
+            </form>
         </div>
 
         <div id="securityContent" class="hidden">
@@ -409,24 +421,6 @@
             Continue as student
         </button>
 
-    </form>
-
-    <h3>Security team</h3>
-
-    <form id="securityLoginForm" class="form-panel">
-        <label>
-            Username
-            <input name="username" required autocomplete="username">
-        </label>
-
-        <label>
-            Password
-            <input name="password" type="password" required autocomplete="current-password">
-        </label>
-
-        <button class="btn btn-outline full-width" type="submit">
-            Sign in as Security
-        </button>
     </form>
 
     <button class="text-button full-width" id="logoutButton">
