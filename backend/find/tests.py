@@ -12,7 +12,15 @@ from .models import Claim, FoundItem
 
 
 @override_settings(
-    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"]
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+    STORAGES={
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    },
 )
 class FoundItemApiTests(TestCase):
     def setUp(self):
@@ -75,6 +83,20 @@ class FoundItemApiTests(TestCase):
         self.assertNotEqual(item.security_answer_hash, "usiu")
         self.assertTrue(item.verify_security_answer(" usiu "))
         self.assertEqual(item.uploaded_by, self.security_user)
+
+    def test_uploaded_photo_is_returned_in_public_item_listing(self):
+        self.client.force_login(self.security_user)
+        upload_response = self.client.post("/found/", self.found_item_data())
+        self.assertEqual(upload_response.status_code, 201)
+        item_id = upload_response.json()["id"]
+
+        listing_response = self.client.get("/found/")
+
+        self.assertEqual(listing_response.status_code, 200)
+        listed_item = listing_response.json()["results"][0]
+        item = FoundItem.objects.get(pk=item_id)
+        self.assertEqual(listed_item["photo"], upload_response.json()["photo"])
+        self.assertTrue(item.photo.storage.exists(item.photo.name))
 
     def test_submit_rejects_non_image_upload(self):
         self.client.force_login(self.security_user)

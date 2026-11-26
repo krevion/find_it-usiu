@@ -30,6 +30,17 @@ automatically. The build installs dependencies, collects static files, and
 applies migrations; the start command runs Gunicorn. Django trusts Render's
 runtime hostname for hosts and CSRF requests automatically.
 
-Uploaded item photos currently use Django's local media directory. Render's
-free web service filesystem is ephemeral, so configure persistent media storage
-before relying on uploaded photos in production.
+Uploaded item photos use Django's local media directory for development. For
+Render, create a **public** Supabase Storage bucket and configure
+`SUPABASE_STORAGE_BUCKET`, `SUPABASE_STORAGE_ENDPOINT`,
+`SUPABASE_STORAGE_REGION`, `SUPABASE_STORAGE_ACCESS_KEY_ID`, and
+`SUPABASE_STORAGE_SECRET_ACCESS_KEY` in the Render service environment. The
+S3 endpoint, region, and server-side access keys are available in Supabase's
+Storage settings. The Render Blueprint prompts for these values and requires
+them before the service starts. Public access allows item photos to be viewed
+by anyone; keep the S3 access keys private.
+
+The Render free web service filesystem is ephemeral. Existing database records
+whose photos were stored only on that filesystem need their original files
+re-uploaded to the bucket; the app cannot recover files that are no longer
+available.

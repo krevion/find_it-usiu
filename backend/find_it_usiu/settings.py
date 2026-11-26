@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
@@ -156,10 +157,64 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STORAGES = {
-    'default': {
+supabase_storage_config = {
+    'bucket_name': os.environ.get('SUPABASE_STORAGE_BUCKET', '').strip(),
+    'endpoint_url': os.environ.get('SUPABASE_STORAGE_ENDPOINT', '').strip(),
+    'region_name': os.environ.get('SUPABASE_STORAGE_REGION', '').strip(),
+    'access_key': os.environ.get('SUPABASE_STORAGE_ACCESS_KEY_ID', '').strip(),
+    'secret_key': os.environ.get('SUPABASE_STORAGE_SECRET_ACCESS_KEY', '').strip(),
+}
+supabase_storage_required = {
+    'SUPABASE_STORAGE_BUCKET': supabase_storage_config['bucket_name'],
+    'SUPABASE_STORAGE_ENDPOINT': supabase_storage_config['endpoint_url'],
+    'SUPABASE_STORAGE_REGION': supabase_storage_config['region_name'],
+    'SUPABASE_STORAGE_ACCESS_KEY_ID': supabase_storage_config['access_key'],
+    'SUPABASE_STORAGE_SECRET_ACCESS_KEY': supabase_storage_config['secret_key'],
+}
+configured_supabase_storage = (
+    any(supabase_storage_required.values())
+    or os.environ.get('SUPABASE_STORAGE_REQUIRED', '').lower() == 'true'
+)
+if configured_supabase_storage:
+    missing_storage_settings = [
+        name for name, value in supabase_storage_required.items() if not value
+    ]
+    if missing_storage_settings:
+        raise ImproperlyConfigured(
+            'Supabase media storage is incomplete. Set: '
+            + ', '.join(missing_storage_settings)
+        )
+
+    storage_endpoint = urlparse(supabase_storage_config['endpoint_url'])
+    if storage_endpoint.scheme != 'https' or not storage_endpoint.netloc:
+        raise ImproperlyConfigured(
+            'SUPABASE_STORAGE_ENDPOINT must be an HTTPS S3 endpoint.'
+        )
+
+    supabase_storage_config.update(
+        {
+            'addressing_style': 'path',
+            'custom_domain': (
+                f'{storage_endpoint.netloc}/storage/v1/object/public/'
+                f'{supabase_storage_config["bucket_name"]}'
+            ),
+            'default_acl': None,
+            'file_overwrite': False,
+            'querystring_auth': False,
+            'url_protocol': 'https:',
+        }
+    )
+    default_storage = {
+        'BACKEND': 'storages.backends.s3.S3Storage',
+        'OPTIONS': supabase_storage_config,
+    }
+else:
+    default_storage = {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
-    },
+    }
+
+STORAGES = {
+    'default': default_storage,
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },
